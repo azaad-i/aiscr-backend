@@ -96,6 +96,7 @@ def calculate_eto():
     new_collection_ref = db.collection('eto-hourly')
     new_doc_ref = new_collection_ref.document()
     new_doc_ref.set({
+        'time': datetime.now(),
         'date': time,
         'eto': eto
     })
