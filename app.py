@@ -133,6 +133,10 @@ def prediction():
 
     return jsonify(joined_dict)
 
+@app.route('/health')
+def health_check():
+    return 'OK'
+
 
 if __name__ == '__main__':
     # Start the scheduler
