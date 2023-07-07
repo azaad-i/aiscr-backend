@@ -1,0 +1,10 @@
+numpy
+pandas
+keras
+datetime
+apscheduler
+git+https://github.com/woodcrafty/PyETo.git
+firebase-admin
+flask
+scikit-learn
+json
