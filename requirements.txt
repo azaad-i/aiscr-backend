@@ -9,4 +9,3 @@ flask
 scikit-learn
 matplotlib
 tensorflow
-gunicorn
