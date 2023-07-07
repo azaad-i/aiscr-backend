@@ -1,34 +1,16 @@
 import pyeto
+from dateutil import tz
 import pyeto.fao
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
-import json
+
 import numpy as np
-import pandas as pd
-from math import sqrt
-from numpy import split
-from numpy import array
-from numpy import concatenate
-from pandas import read_csv
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-from sklearn.metrics import r2_score
-from sklearn.metrics import mean_squared_log_error
+
 from sklearn.preprocessing import MinMaxScaler
-from matplotlib import pyplot
-from keras import regularizers
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten, LSTM, Bidirectional
-from keras.callbacks import ModelCheckpoint
+
 from keras.models import load_model
 from flask import Flask, request, jsonify
-import math
-from pyeto._check import (
-    check_day_hours as _check_day_hours,
-    check_doy as _check_doy,
-    check_latitude_rad as _check_latitude_rad,
-    check_sol_dec_rad as _check_sol_dec_rad,
-    check_sunset_hour_angle_rad as _check_sunset_hour_angle_rad,
-)
+
 from firebase_admin import credentials, firestore, initialize_app
 
 app = Flask(__name__)
@@ -72,32 +54,46 @@ def calculate_eto():
     a2 = (37 * WS / T * (svp - avp) * psy / (del_svp + (psy * (1 + c * WS))))
     eto = a1 + a2
 
+    source_timezone = tz.gettz('UTC')
+
+    # Set the destination timezone to IST
+    destination_timezone = tz.gettz('Asia/Kolkata')
+
+    # Get the current time in UTC
+    utc_time = datetime.utcnow()
+
+    # Convert the UTC time to IST
+    ist_time = utc_time.replace(tzinfo=source_timezone).astimezone(destination_timezone)
+
     # Store ETo in Firestore collection
     new_collection_ref = db.collection('eto-hourly')
     new_doc_ref = new_collection_ref.document()
     new_doc_ref.set({
-        'time': datetime.now(),
+        'timestamp': ist_time,
         'date': time,
         'eto': eto
     })
 
-    return jsonify({'date': time, 'eto': eto})
+    return jsonify({'timestamp': ist_time,'date': time, 'eto': eto})
 
 
 @app.route('/ts_model', methods=['POST'])
 def prediction():
     # Retrieve data from Firestore collection
     collection_ref = db.collection('ts')
-    query = collection_ref.order_by('Date', direction=firestore.Query.DESCENDING).limit(24)
+    query = collection_ref.order_by('Index', direction=firestore.Query.DESCENDING).limit(24)
     snapshots = query.stream()
     data = [snapshot.to_dict() for snapshot in snapshots]
-    data = sorted(data, key=lambda x: x['Date'])
+    data = sorted(data, key=lambda x: x['Index'])
 
     if not data:
         return jsonify({'error': 'No data available'})
-
+    index = [element['Index'] for element in data]
     date = [element['Date'] for element in data]
     eto = [element['ETo'] for element in data]
+    new_index =[]
+    for dt in index:
+        new_index.append(dt+24)
 
     new_date = []
     for dt_str in date:
@@ -122,14 +118,16 @@ def prediction():
 
     # Prepare the results dictionary
     joined_dict = {new_date[i]: y_pred[i] for i in range(len(new_date))}
-
+    i=0
     # Store predictions in Firestore collection
     for key, value in joined_dict.items():
         doc_ref = db.collection('ts').document()
         doc_ref.set({
+            'Index':new_index[i],
             'Date': key,
             'ETo': value
         })
+        i+=1
 
     return jsonify(joined_dict)
 
