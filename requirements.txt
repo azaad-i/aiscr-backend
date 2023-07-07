@@ -8,3 +8,4 @@ firebase-admin
 flask
 scikit-learn
 matplotlib
+tensorflow
