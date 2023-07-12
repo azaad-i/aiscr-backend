@@ -11,3 +11,5 @@ matplotlib
 tensorflow
 gunicorn
 python-dateutil
+fasteners
+filelock
