@@ -30,8 +30,8 @@ db = firestore.client()
 last_execution_time = None
 
 # File paths and names
-prediction_lock_file = 'C:\\Users\\azaad\\PycharmProjects\\pythonProject6\\prediction.lock'
-calculate_eto_lock_file = 'C:\\Users\\azaad\\PycharmProjects\\pythonProject6\\calculate_eto.lock'
+prediction_lock_file = 'prediction.lock'
+calculate_eto_lock_file = 'calculate_eto.lock'
 
 # Check if the prediction lock file already exists
 if not os.path.exists(prediction_lock_file):
@@ -56,7 +56,7 @@ def calculate_eto_route():
             return jsonify({'error': 'Already executed within the last hour'})
 
         # Acquire a lock
-        lock_file_path = 'C:\\Users\\azaad\\PycharmProjects\\pythonProject6\\calculate_eto.lock'
+        lock_file_path = 'calculate_eto.lock'
         lock = filelock.FileLock(lock_file_path)
 
         try:
@@ -127,7 +127,7 @@ def prediction():
 
     with app.app_context():
         # Acquire a lock
-        lock_file_path = 'C:\\Users\\azaad\\PycharmProjects\\pythonProject6\\prediction.lock'
+        lock_file_path = 'prediction.lock'
         lock = filelock.FileLock(lock_file_path)
 
         try:
@@ -154,7 +154,7 @@ def prediction():
                 new_date = updated_dt.strftime("%d-%m-%Y %H:%M")
 
                 # Load the trained model
-                model = load_model("C:\\Users\\azaad\\PycharmProjects\\pythonProject6\\bilstm_24-1(str)")
+                model = load_model("bilstm_24-1(str)")
 
                 # Preprocess the input data
                 test = np.array(eto)
