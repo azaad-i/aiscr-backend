@@ -1,3 +1,4 @@
+#Use this if the Net Radiation values are there in the database
 import pyeto
 from dateutil import tz
 import pyeto.fao
