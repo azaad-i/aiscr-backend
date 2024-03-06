@@ -180,7 +180,7 @@ def prediction():
                 new_date = updated_dt.strftime("%d-%m-%Y %H:%M")
 
                 # Load the trained model
-                model = load_model("")
+                model = load_model("Aiscr_bilstm_24-24-20230702T130124Z-001//Aiscr_bilstm_24-24")
 
                 # Preprocess the input data
                 test = np.array(eto)
