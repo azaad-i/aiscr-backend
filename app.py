@@ -159,7 +159,7 @@ def prediction():
     test = eto
 
 
-    model = load_model("Aiscr_bilstm_24-24-20230702T130124Z-001/Aiscr_bilstm_24-24")
+    model = load_model("bilstm_24-1(str)")
     test = np.array(test)
     print(test)
     test = test.reshape((-1,1))
