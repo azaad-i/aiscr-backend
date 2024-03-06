@@ -1,33 +1,11 @@
 #Net Radiation using temperature
 import pyeto
+from dateutil import tz
 import pyeto.fao
+import os
+import filelock
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from datetime import datetime, timedelta
-import json
-import numpy as np
-import pandas as pd
-from math import sqrt
-from numpy import split
-from numpy import array
-from numpy import concatenate
-from pandas import read_csv
-from sklearn.metrics import mean_squared_error,mean_absolute_error
-from sklearn.metrics import r2_score
-from sklearn.metrics import mean_squared_log_error
-from sklearn.preprocessing import MinMaxScaler
-from matplotlib import pyplot
-from keras import regularizers
-from keras.models import Sequential
-from keras.layers import Dense
-
-from keras.layers import Dropout
-from keras.layers import Flatten
-from keras.layers import LSTM,Bidirectional
-from keras.callbacks import ModelCheckpoint
-from keras.models import load_model
-from flask import Flask,request,jsonify
-
 import math
 from pyeto._check import (
     check_day_hours as _check_day_hours,
@@ -36,156 +14,209 @@ from pyeto._check import (
     check_sol_dec_rad as _check_sol_dec_rad,
     check_sunset_hour_angle_rad as _check_sunset_hour_angle_rad,
 )
-
-#: Solar constant [ MJ m-2 min-1]
-SOLAR_CONSTANT = 0.0820
-
-# Stefan Boltzmann constant [MJ K-4 m-2 day-1]
-STEFAN_BOLTZMANN_CONSTANT = 0.000000004903  #
-"""Stefan Boltzmann constant [MJ K-4 m-2 day-1]"""
-
-from flask import Flask,request,jsonify
 import numpy as np
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import firestore
+
+from sklearn.preprocessing import MinMaxScaler
+
+from keras.models import load_model
+from flask import Flask, request, jsonify
+
+from firebase_admin import credentials, firestore, initialize_app
+
 app = Flask(__name__)
+app.config['TIMEOUT'] = 60
 
 scheduler = BackgroundScheduler(daemon=True)
 
+# Initialize the Firebase app
+cred = credentials.Certificate('user-details-3840f-firebase-adminsdk-pbwo6-00a5793239.json')
+initialize_app(cred)
+
+# Create a Firestore client
+db = firestore.client()
+
+last_execution_time = None
+
+# File paths and names
+prediction_lock_file = 'prediction.lock'
+calculate_eto_lock_file = 'calculate_eto.lock'
+
+# Check if the prediction lock file already exists
+if not os.path.exists(prediction_lock_file):
+    # Create an empty prediction lock file
+    open(prediction_lock_file, 'w').close()
+
+# Check if the calculate_eto lock file already exists
+if not os.path.exists(calculate_eto_lock_file):
+    # Create an empty calculate_eto lock file
+    open(calculate_eto_lock_file, 'w').close()
+
 
 @app.route('/calculate_eto', methods=['POST'])
-def calculate_eto():
-    # Get the input parameters from the request
+def calculate_eto_route():
+    print(f"calculate_eto_route - Current time: {datetime.now()}")
 
+    global last_execution_time
+    with app.app_context():
+        # Check if the function has already run within the last hour
+        if last_execution_time is not None and datetime.utcnow() - last_execution_time < timedelta(hours=1):
+            print("calculate_eto_route - Already executed within the last hour")
+            return jsonify({'error': 'Already executed within the last hour'})
 
-    # Initialize the Firebase app
-    cred = credentials.Certificate('user-details-3840f-firebase-adminsdk-pbwo6-00a5793239.json')
-    firebase_admin.initialize_app(cred)
+        # Acquire a lock
+        lock_file_path = 'calculate_eto.lock'
+        lock = filelock.FileLock(lock_file_path)
 
-    # Create a Firestore client
-    db = firestore.client()
+        try:
+            # Try to acquire the lock
+            with lock.acquire(timeout=0):
+                # Retrieve data from Firestore collection
+                collection_ref = db.collection('hw')
+                query = collection_ref.order_by('Date', direction=firestore.Query.DESCENDING).limit(1)
+                docs = query.get()
+                data = [doc.to_dict() for doc in docs]
 
-    # Retrieve data from a Firestore collection
-    collection_ref = db.collection('hw')
-    docs = collection_ref.get()
-    query = collection_ref.order_by('Date', direction=firestore.Query.DESCENDING).limit(1)
-    docs = query.get()
-    data = []
-    for doc in docs:
-        data.append(doc.to_dict())
-    print(data)
-    data = data[-1]
-    svp = pyeto.fao.svp_from_t(data['Tavg'])
-    svpmax = pyeto.fao.svp_from_t(data['Tmax'])
-    svpmin = pyeto.fao.svp_from_t(data['Tmin'])
-    avp = pyeto.avp_from_rhmean(svpmin, svpmax,data['RHavg'])
+                if not data:
+                    return jsonify({'error': 'No data available'})
 
-    new_date = pd.to_datetime(data['Date'])
-    doy = timetuple(new_date).tm_yday
-    sol_dec = pyeto.sol_dec(doy)
-    sunset_hour_angle = pyeto.sunset_hour_angle(latitude, sol_dec)
-    day_light_hours = pyeto.daylight_hours(sunset_hour_angle)
-    ird = pyeto.inv_rel_dist_earth_sun(doy)
-    latitude = pyeto.deg2rad(11.285278)
-    et_rad =pyeto.et_rad(latitude, sol_dec, sunset_hour_angle, ird)
-    altitude = 60
-    cs_rad = pyeto.cs_rad(altitude,et_rad)
-    del_svp = pyeto.fao.delta_svp(data["Tavg"])
-    psy = pyeto.fao.psy_const(pyeto.fao.atm_pressure(33))
-    coastal = False
-    sol_from_t =pyeto.sol_rad_from_t(et_rad,cs_rad, data['Tmin'], data['Tmax'], coastal)
-    shortwave = pyeto.net_in_sol_rad(sol_from_t, albedo=0.23)
-    longwave =pyeto.net_out_lw_rad(data['Tmax'], data['Tmin'],sol_from_t,cs_rad, avp)
-    NR = pyeto.net_rad(shortwave, longwave)
-    #NR = (data["NR"] * 24 * 60 * 60) / 1000000
-    T = pyeto.celsius2kelvin(data["Tavg"])
-    WS = data["Wind_Spd"]
-    #del_svp = pyeto.fao.delta_svp(data["Tavg"])
-    #psy = pyeto.fao.psy_const(pyeto.fao.atm_pressure(33))
-    time = data['Date']
+                data = data[-1]
+                svp = pyeto.fao.svp_from_t(data['Tavg'])
+                svpmax = pyeto.fao.svp_from_t(data['Tmax'])
+                svpmin = pyeto.fao.svp_from_t(data['Tmin'])
+                avp = pyeto.avp_from_rhmean(svpmin, svpmax,data['RHavg'])
+            
+                new_date = pd.to_datetime(data['Date'])
+                doy = timetuple(new_date).tm_yday
+                sol_dec = pyeto.sol_dec(doy)
+                sunset_hour_angle = pyeto.sunset_hour_angle(latitude, sol_dec)
+                day_light_hours = pyeto.daylight_hours(sunset_hour_angle)
+                ird = pyeto.inv_rel_dist_earth_sun(doy)
+                latitude = pyeto.deg2rad(11.285278)
+                et_rad =pyeto.et_rad(latitude, sol_dec, sunset_hour_angle, ird)
+                altitude = 60
+                cs_rad = pyeto.cs_rad(altitude,et_rad)
+                del_svp = pyeto.fao.delta_svp(data["Tavg"])
+                psy = pyeto.fao.psy_const(pyeto.fao.atm_pressure(33))
+                coastal = False
+                sol_from_t =pyeto.sol_rad_from_t(et_rad,cs_rad, data['Tmin'], data['Tmax'], coastal)
+                shortwave = pyeto.net_in_sol_rad(sol_from_t, albedo=0.23)
+                longwave =pyeto.net_out_lw_rad(data['Tmax'], data['Tmin'],sol_from_t,cs_rad, avp)
+                NR = pyeto.net_rad(shortwave, longwave)
+                #NR = (data["NR"] * 24 * 60 * 60) / 1000000
+                T = pyeto.celsius2kelvin(data["Tavg"])
+                WS = data["Wind_Spd"]
+                #del_svp = pyeto.fao.delta_svp(data["Tavg"])
+                #psy = pyeto.fao.psy_const(pyeto.fao.atm_pressure(33))
+                time = data['Date']
+            
+                # Calculate ETo using PyETo
+                c = np.where(NR > 0, 0.24, 0.96)
+                shf = np.where(NR > 0, 0.1 * NR, 0.5 * NR)
+                a1 = (0.408 * (NR - shf) * del_svp / (del_svp + (psy * (1 + c * WS))))
+                a2 = (37 * WS / T * (svp - avp) * psy / (del_svp + (psy * (1 + c * WS))))
+                eto = a1+a2
 
-    # Calculate ETo using PyETo
-    c = np.where(NR > 0, 0.24, 0.96)
-    shf = np.where(NR > 0, 0.1 * NR, 0.5 * NR)
-    a1 = (0.408 * (NR - shf) * del_svp / (del_svp + (psy * (1 + c * WS))))
-    a2 = (37 * WS / T * (svp - avp) * psy / (del_svp + (psy * (1 + c * WS))))
-    eto = a1+a2
+                source_timezone = tz.gettz('UTC')
 
-    new_collection_ref = db.collection('eto-hourly')
-    new_doc_ref = new_collection_ref.document()
-    new_doc_ref.set({
-        'date': time,
-        'eto': eto
-    })
+                # Set the destination timezone to IST
+                destination_timezone = tz.gettz('Asia/Kolkata')
 
+                # Get the current time in UTC
+                utc_time = datetime.utcnow()
 
-    return jsonify({'date':time,
-                    'eto': eto})
+                # Convert the UTC time to IST
+                ist_time = utc_time.replace(tzinfo=source_timezone).astimezone(destination_timezone)
+
+                # Store ETo in Firestore collection
+                new_collection_ref = db.collection('eto-hourly')
+                new_doc_ref = new_collection_ref.document()
+                new_doc_ref.set({
+                    'timestamp': ist_time,
+                    'date': time,
+                    'eto': eto
+                })
+                last_execution_time = datetime.utcnow()
+
+                return jsonify({'timestamp': ist_time, 'date': time, 'eto': eto})
+
+        except filelock.Timeout:
+            return jsonify({'error': 'Another process is already running'})
+
+        finally:
+            # Release the lock
+            lock.release()
+
 
 @app.route('/ts_model', methods=['POST'])
 def prediction():
-    cred = credentials.Certificate('user-details-3840f-firebase-adminsdk-pbwo6-00a5793239.json')
-    firebase_admin.initialize_app(cred)
+    print(f"prediction - Current time: {datetime.now()}")
 
-    # Create a Firestore client
-    db = firestore.client()
+    with app.app_context():
+        # Acquire a lock
+        lock_file_path = 'prediction.lock'
+        lock = filelock.FileLock(lock_file_path)
 
-    # Retrieve data from a Firestore collection
-    collection_ref = db.collection('ts')
-    query = collection_ref.order_by('Date', direction=firestore.Query.DESCENDING).limit(24)
-    snapshots = query.stream()
-    data = [snapshot.to_dict() for snapshot in snapshots]  # Extract the data from the DocumentSnapshot objects
-    data = sorted(data, key=lambda x: x['Date'])  # Replace 'field_name' with the actual field name to sort by
+        try:
+            # Try to acquire the lock
+            with lock.acquire(timeout=0):
+                # Retrieve data from Firestore collection
+                collection_ref = db.collection('ts')
+                query = collection_ref.order_by('Index', direction=firestore.Query.DESCENDING).limit(24)
+                snapshots = query.stream()
+                data = [snapshot.to_dict() for snapshot in snapshots]
+                data = sorted(data, key=lambda x: x['Index'])
 
-    date =  []
-    eto  = []
-    print(data)
-    for elements in data:
-       date.append(elements['Date'])
-       eto.append(elements['ETo'])
+                if not data:
+                    return jsonify({'error': 'No data available'})
 
-    print(date)
+                index = [element['Index'] for element in data]
+                date = [element['Date'] for element in data]
+                eto = [element['ETo'] for element in data]
+                new_index = index[-1] + 1
+
+                dt_str = date[-1]
+                dt = datetime.strptime(dt_str, "%d-%m-%Y %H:%M")
+                updated_dt = dt + timedelta(hours=1)
+                new_date = updated_dt.strftime("%d-%m-%Y %H:%M")
+
+                # Load the trained model
+                model = load_model("")
+
+                # Preprocess the input data
+                test = np.array(eto)
+                test = test.reshape((-1, 1))
+                scaler = MinMaxScaler()
+                test = scaler.fit_transform(test)
+                test = test.reshape((1, 24, 1))
+
+                # Make predictions using the model
+                y_pred = model.predict(test)
+                y_pred = scaler.inverse_transform(y_pred)
+                y_pred = float(y_pred[0][0])
+
+                source_timezone = tz.gettz('UTC')
+                destination_timezone = tz.gettz('Asia/Kolkata')
+                utc_time = datetime.utcnow()
+                ist_time = utc_time.replace(tzinfo=source_timezone).astimezone(destination_timezone)
+
+                # Store predictions in Firestore collection
+                doc_ref = db.collection('ts').document()
+                doc_ref.set({
+                    'Index': new_index,
+                    'Timestamp': ist_time,
+                    'Date': new_date,
+                    'ETo': y_pred
+                })
+
+                return jsonify({'timestamp': ist_time, 'date': new_date, 'eto': y_pred, 'index': new_index})
+
+        except filelock.Timeout:
+            return jsonify({'error': 'Another process is already running'})
 
 
-    new_date = []
-
-    for dt_str in date:
-        dt = datetime.strptime(dt_str, "%d-%m-%Y %H:%M")
-        updated_dt = dt + timedelta(hours=24)
-        new_date.append(updated_dt.strftime("%d-%m-%Y %H:%M"))
-    print(new_date)
-    #data = request.get_json()
-    test = eto
-
-
-    model = load_model("bilstm_24-1(str)")
-    test = np.array(test)
-    print(test)
-    test = test.reshape((-1,1))
-
-    scaler = MinMaxScaler()
-    test = scaler.fit_transform(test)
-
-    test = test.reshape((1,24,1))
-
-    print(test)
-    y_pred = model.predict(test)
-    y_pred = scaler.inverse_transform(y_pred)
-    y_pred = y_pred.flatten().tolist()
-
-    joined_dict = {new_date[i]: y_pred[i] for i in range(len(new_date))}
-    for key, value in joined_dict.items():
-        doc_ref = db.collection('ts').document()
-        doc_ref.set({
-            'Date': key,
-            'ETo': value
-        })
-    print(joined_dict)
-
-    return jsonify(joined_dict)
-
-
+@app.route('/health')
+def health_check():
+    return 'OK'
 
 
 if __name__ == '__main__':
@@ -193,10 +224,8 @@ if __name__ == '__main__':
     scheduler.start()
 
     # Add the tasks to the scheduler with desired schedules
-    scheduler.add_job(calculate_eto, 'interval', hours=1)
-    scheduler.add_job(prediction, 'interval', hours=24)
+    scheduler.add_job(calculate_eto_route, 'interval', hours=1, next_run_time=datetime.now())
+    scheduler.add_job(prediction, 'interval', hours=1, next_run_time=datetime.now())
 
     # Run the Flask application
-
     app.run(debug=True)
-
