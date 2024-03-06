@@ -88,10 +88,10 @@ def calculate_eto_route():
                 new_date = pd.to_datetime(data['Date'])
                 doy = new_date.timetuple().tm_yday
                 sol_dec = pyeto.sol_dec(doy)
+                latitude = pyeto.deg2rad(11.285278)
                 sunset_hour_angle = pyeto.sunset_hour_angle(latitude, sol_dec)
                 day_light_hours = pyeto.daylight_hours(sunset_hour_angle)
                 ird = pyeto.inv_rel_dist_earth_sun(doy)
-                latitude = pyeto.deg2rad(11.285278)
                 et_rad =pyeto.et_rad(latitude, sol_dec, sunset_hour_angle, ird)
                 altitude = 60
                 cs_rad = pyeto.cs_rad(altitude,et_rad)
