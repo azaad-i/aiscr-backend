@@ -5,7 +5,7 @@ import pyeto.fao
 import os
 import filelock
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timetuple
 import math
 from pyeto._check import (
     check_day_hours as _check_day_hours,
