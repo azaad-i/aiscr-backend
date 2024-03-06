@@ -5,7 +5,7 @@ import pyeto.fao
 import os
 import filelock
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta, timetuple
+from datetime import datetime, timedelta
 import math
 from pyeto._check import (
     check_day_hours as _check_day_hours,
@@ -86,7 +86,7 @@ def calculate_eto_route():
                 avp = pyeto.avp_from_rhmean(svpmin, svpmax,data['RHavg'])
             
                 new_date = pd.to_datetime(data['Date'])
-                doy = timetuple(new_date).tm_yday
+                doy = new_date.timetuple().tm_yday
                 sol_dec = pyeto.sol_dec(doy)
                 sunset_hour_angle = pyeto.sunset_hour_angle(latitude, sol_dec)
                 day_light_hours = pyeto.daylight_hours(sunset_hour_angle)
