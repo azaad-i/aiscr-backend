@@ -52,7 +52,7 @@ if not os.path.exists(calculate_eto_lock_file):
     open(calculate_eto_lock_file, 'w').close()
 
 
-@app.route('/calculate_eto', methods=['POST'])
+@app.route('/calculate_eto')
 def calculate_eto_route():
     print(f"calculate_eto_route - Current time: {datetime.now()}")
 
@@ -147,7 +147,7 @@ def calculate_eto_route():
             lock.release()
 
 
-@app.route('/ts_model', methods=['POST'])
+@app.route('/ts_model')
 def prediction():
     print(f"prediction - Current time: {datetime.now()}")
 
