@@ -15,7 +15,7 @@ from pyeto._check import (
     check_sunset_hour_angle_rad as _check_sunset_hour_angle_rad,
 )
 import numpy as np
-
+import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
 from keras.models import load_model
