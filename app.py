@@ -174,8 +174,8 @@ if __name__ == '__main__':
     scheduler.start()
 
     # Add the tasks to the scheduler with desired schedules
-    scheduler.add_job(calculate_eto, 'interval', hours=1, start_date=datetime.now())
-    scheduler.add_job(prediction, 'interval', hours=1, start_date=datetime.now())
+    scheduler.add_job(calculate_eto, 'interval', minutes=1, start_date=datetime.now())
+    scheduler.add_job(prediction, 'interval', minutes=1, start_date=datetime.now())
 
 
     # Run the Flask application
