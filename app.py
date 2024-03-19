@@ -111,7 +111,7 @@ def prediction():
         '''
         # Load the trained model
         #model = load_model("bilstm_24-1(str) (1).h5")
-        interpreter = tf.lite.Interpreter(model_path="converted_model.tflite(24-1)")
+        interpreter = tf.lite.Interpreter(model_path="converted_model(24-1).tflite")
         interpreter.allocate_tensors()
         test = np.array(eto)
         test = test.reshape((-1, 1))
@@ -180,8 +180,8 @@ if __name__ == '__main__':
     scheduler.start()
 
     # Add the tasks to the scheduler with desired schedules
-    scheduler.add_job(calculate_eto, 'interval', minutes = 1, start_date=datetime.now())
-    scheduler.add_job(prediction, 'interval', minutes = 1, start_date=datetime.now())
+    scheduler.add_job(calculate_eto, 'interval', hours = 1, start_date=datetime.now())
+    scheduler.add_job(prediction, 'interval', hours = 1, start_date=datetime.now())
 
 
     # Run the Flask application
